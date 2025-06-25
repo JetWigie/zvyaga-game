@@ -113,6 +113,13 @@
             <button onclick="restartGame()" class="action-button px-4 py-2">ПОПРОБОВАТЬ СНОВА</button>
         </div>
     </div>
+    
+    <!-- === ЗВУКОВЫЕ ФАЙЛЫ === -->
+    <audio id="music-bg" src="sounds/background.mp3" loop></audio>
+    <audio id="sound-success" src="sounds/success.wav"></audio>
+    <audio id="sound-fail" src="sounds/fail.wav"></audio>
+    <audio id="sound-click" src="sounds/click.wav"></audio>
+
 
     <script>
         const canvas = document.getElementById('pixel-canvas');
@@ -175,6 +182,15 @@
             trusting: { action: 'belly', hint: 'Звяга плюхнулся на спину! Это знак доверия!', animation: 'belly'}
         };
 
+        function playSound(id, volume = 1.0) {
+            const sound = document.getElementById(id);
+            if (sound) {
+                sound.currentTime = 0;
+                sound.volume = volume;
+                sound.play().catch(e => console.log("Не удалось запустить звук:", e));
+            }
+        }
+
         function drawScene(characterSprite) {
             canvas.innerHTML = '';
             const bgSprite = backgrounds[currentBgIndex].art;
@@ -233,10 +249,17 @@
         function handleAction(action) {
             if (isGameOver) return;
             
+            const music = document.getElementById('music-bg');
+            if (music && music.paused) {
+                music.volume = 0.2;
+                music.play().catch(e => {});
+            }
+
             if (gameLoopInterval === null) {
                 if (action === 'treat') {
                     trustLevel += 20;
                     statusText.textContent = "Отличное начало! Он тебе доверяет!";
+                    playSound('sound-success');
                     playAnimation('eat', true, 1200);
                     updateUI();
                     
@@ -246,6 +269,7 @@
                     }, 1500);
                 } else {
                     statusText.textContent = "Хм, он не реагирует. Может, он голоден?";
+                    playSound('sound-fail');
                     playAnimation('idle', false); 
                 }
                 return;
@@ -257,6 +281,7 @@
             if (action === correctAction) {
                 trustLevel += 20;
                 statusText.textContent = "Звяга счастлив!";
+                playSound('sound-success');
                 playAnimation(animKey || 'happy', true, 1200);
                 
                 clearInterval(gameLoopInterval);
@@ -267,6 +292,7 @@
             } else {
                 trustLevel -= 15;
                 statusText.textContent = "Ауч! Звяге это не понравилось!";
+                playSound('sound-fail');
                 playAnimation('bite', true, 800);
             }
             updateUI();
@@ -304,16 +330,8 @@
             updateUI();
         }
 
-        prevBgBtn.addEventListener('click', () => {
-            currentBgIndex = (currentBgIndex - 1 + backgrounds.length) % backgrounds.length;
-            bgNameDisplay.textContent = backgrounds[currentBgIndex].name;
-            drawScene(pixelArt.idle[0]);
-        });
-
-        nextBgBtn.addEventListener('click', () => {
-            currentBgIndex = (currentBgIndex + 1) % backgrounds.length;
-            bgNameDisplay.textContent = backgrounds[currentBgIndex].name;
-            drawScene(pixelArt.idle[0]);
+        document.querySelectorAll('button').forEach(button => {
+            button.addEventListener('click', () => playSound('sound-click', 0.5));
         });
 
         actionButtons.forEach(button => {
