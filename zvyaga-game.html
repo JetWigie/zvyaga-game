@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Как приручить Звягу (16-Bit Edition)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #2a2a2a;
+            color: #ffffff;
+            image-rendering: pixelated; /* Ensures pixel art stays sharp */
+        }
+        .game-container {
+            background-color: #4a4a4a;
+            border: 4px solid #ffffff;
+            box-shadow: 0 0 0 4px #000000;
+        }
+        .action-button {
+            background-color: #5d5d5d;
+            border: 2px solid #ffffff;
+            text-transform: uppercase;
+            transition: all 0.1s;
+            color: #ffffff;
+            font-size: 10px; /* Smaller font for Russian text */
+        }
+        .action-button:hover:not(:disabled) {
+            background-color: #7a7a7a;
+            transform: translateY(-2px);
+        }
+        .action-button:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+        .progress-bar-container {
+            background-color: #2a2a2a;
+            border: 2px solid #ffffff;
+            padding: 2px;
+            height: 28px;
+        }
+        .progress-bar {
+            background: #32cd32;
+            transition: width 0.5s ease-in-out;
+        }
+        .win-overlay, .lose-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: flex; justify-content: center; align-items: center; text-align: center;
+            z-index: 100; padding: 1rem;
+        }
+        .dialog-box {
+            background-color: #4a4a4a;
+            border: 4px solid #ffffff;
+            padding: 2rem;
+            width: 90%;
+            max-width: 400px;
+        }
+        .pixel-display {
+             background-color: #1e1e1e;
+             border: 4px solid #000000;
+             padding: 4px;
+        }
+    </style>
+</head>
+<body class="p-4 flex items-center justify-center min-h-screen">
+
+    <div id="game-container" class="game-container p-4 sm:p-6 w-full max-w-lg">
+        <h1 class="text-xl sm:text-2xl text-yellow-400 mb-4 text-center">Приручи Звягу!</h1>
+        
+        <div class="pixel-display my-4 h-48 sm:h-56 flex items-center justify-center">
+            <svg id="pixel-canvas" viewBox="0 0 64 64" class="w-full h-full"></svg>
+        </div>
+
+        <p id="status-text" class="text-xs sm:text-sm text-center h-16 my-2 text-cyan-300"></p>
+
+        <div class="my-4">
+            <h3 class="text-sm mb-2 text-yellow-400">УРОВЕНЬ ДОВЕРИЯ</h3>
+            <div class="progress-bar-container">
+                <div id="progress-bar" class="progress-bar h-full" style="width: 25%;"></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mt-6">
+            <button data-action="treat" class="action-button p-3">КОРМИТЬ</button>
+            <button data-action="pet" class="action-button p-3">ГЛАДИТЬ</button>
+            <button data-action="toy" class="action-button p-3">ИГРАТЬ</button>
+            <button data-action="water" class="action-button p-3">ПОИТЬ</button>
+            <button data-action="belly" class="action-button p-3">ЧЕСАТЬ ПУЗО</button>
+            <button data-action="command" class="action-button p-3">СИДЕТЬ!</button>
+        </div>
+        
+        <div id="background-controls" class="flex items-center justify-center mt-4 gap-3">
+            <button id="prev-bg-btn" class="action-button px-3 py-1 text-lg">&lt;</button>
+            <span id="bg-name-display" class="text-sm w-24 text-center">Гостиная</span>
+            <button id="next-bg-btn" class="action-button px-3 py-1 text-lg">&gt;</button>
+        </div>
+    </div>
+
+    <div id="win-screen" class="win-overlay hidden">
+        <div class="dialog-box">
+            <h2 class="text-2xl text-green-400 mb-4">ПОБЕДА!</h2>
+            <p class="mb-6 text-sm">Звяга вам полностью доверяет! Вы лучший хозяин!</p>
+            <button onclick="restartGame()" class="action-button px-4 py-2">ИГРАТЬ СНОВА</button>
+        </div>
+    </div>
+    <div id="lose-screen" class="lose-overlay hidden">
+         <div class="dialog-box">
+            <h2 class="text-2xl text-red-500 mb-4">ИГРА ОКОНЧЕНА</h2>
+            <p class="mb-6 text-sm">Звяга расстроен. Попробуйте понять его лучше в следующий раз.</p>
+            <button onclick="restartGame()" class="action-button px-4 py-2">ПОПРОБОВАТЬ СНОВА</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('pixel-canvas');
+        const statusText = document.getElementById('status-text');
+        const progressBar = document.getElementById('progress-bar');
+        const actionButtons = document.querySelectorAll('.action-button');
+        const winScreen = document.getElementById('win-screen');
+        const loseScreen = document.getElementById('lose-screen');
+        const prevBgBtn = document.getElementById('prev-bg-btn');
+        const nextBgBtn = document.getElementById('next-bg-btn');
+        const bgNameDisplay = document.getElementById('bg-name-display');
+
+        let trustLevel = 25;
+        let currentState = 'hungry';
+        let isGameOver = false;
+        let animationInterval;
+        let gameLoopInterval = null;
+        let currentBgIndex = 0;
+
+        const colors = {
+            tan1: '#E7A854', tan2: '#D98236', 
+            brown1: '#75472E', brown2: '#5A3825',
+            nose: '#3D281F', eye: '#2E222F',
+            bowl: '#C0C0C0', water: '#4682B4'
+        };
+
+        const offsetX = 8;
+        const offsetY = 4;
+        
+        const baseSprite = [
+            { x: offsetX + 0, y: offsetY + 32, w: 40, h: 8, c: colors.brown2 }, { x: offsetX + 4, y: offsetY + 40, w: 8, h: 8, c: colors.brown1 }, { x: offsetX + 28, y: offsetY + 40, w: 8, h: 8, c: colors.brown1 },
+            { x: offsetX + 8, y: offsetY + 8, w: 40, h: 24, c: colors.tan1 }, { x: offsetX + 16, y: offsetY + 4, w: 24, h: 4, c: colors.tan1 }, { x: offsetX + 8, y: offsetY + 24, w: 40, h: 8, c: colors.tan2 }, { x: offsetX + 0, y: offsetY + 24, w: 8, h: 8, c: colors.tan2 },
+            { x: offsetX + 16, y: offsetY + 0, w: 8, h: 8, c: colors.brown1 }, { x: offsetX + 32, y: offsetY + 0, w: 8, h: 8, c: colors.brown1 },
+            { x: offsetX + 16, y: offsetY + 16, w: 8, h: 8, c: colors.eye }, { x: offsetX + 32, y: offsetY + 16, w: 8, h: 8, c: colors.eye }, { x: offsetX + 24, y: offsetY + 20, w: 8, h: 8, c: colors.nose },
+        ];
+        
+        const pixelArt = {
+            idle: [baseSprite],
+            bite: [[ ...baseSprite.filter(p => p.c !== colors.eye), { x: offsetX + 16, y: offsetY + 16, w: 8, h: 8, c: 'red' }, { x: offsetX + 32, y: offsetY + 16, w: 8, h: 8, c: 'red' }, { x: offsetX + 24, y: offsetY + 28, w: 8, h: 4, c: 'white' } ]],
+            happy: [ [...baseSprite, { x: offsetX - 4, y: offsetY + 28, w: 4, h: 6, c: colors.tan2, transform: `rotate(15 ${offsetX} ${offsetY+32})` }], [...baseSprite, { x: offsetX - 4, y: offsetY + 28, w: 4, h: 6, c: colors.tan2, transform: `rotate(-15 ${offsetX} ${offsetY+32})` }] ],
+            eat: [[ { x: offsetX + 42, y: offsetY + 42, w: 16, h: 6, c: colors.bowl }, { x: offsetX + 0, y: offsetY + 32, w: 40, h: 8, c: colors.brown2 }, { x: offsetX + 4, y: offsetY + 40, w: 8, h: 8, c: colors.brown1 }, { x: offsetX + 28, y: offsetY + 40, w: 8, h: 8, c: colors.brown1 }, { x: offsetX + 18, y: offsetY + 18, w: 30, h: 24, c: colors.tan1 }, { x: offsetX + 26, y: offsetY + 14, w: 14, h: 4, c: colors.tan1 }, { x: offsetX + 18, y: offsetY + 34, w: 30, h: 8, c: colors.tan2 }, { x: offsetX + 26, y: offsetY + 10, w: 8, h: 8, c: colors.brown1 }, { x: offsetX + 42, y: offsetY + 10, w: 8, h: 8, c: colors.brown1 }, { x: offsetX + 34, y: offsetY + 30, w: 8, h: 8, c: colors.nose } ]],
+            sit: [[ { x: offsetX + 0, y: offsetY + 38, w: 40, h: 10, c: colors.brown2 }, { x: offsetX + 4, y: offsetY + 40, w: 8, h: 8, c: colors.brown1 }, { x: offsetX + 28, y: offsetY + 40, w: 8, h: 8, c: colors.brown1 }, ...baseSprite.filter(p => !p.c.includes('brown')) ]],
+            belly: [[ { x: offsetX + 10, y: offsetY + 32, w: 28, h: 16, c: colors.tan2 }, { x: offsetX + 4, y: offsetY + 24, w: 12, h: 10, c: colors.tan1 }, { x: offsetX + 6, y: offsetY + 26, w: 4, h: 4, c: colors.eye }, { x: offsetX + 14, y: offsetY + 40, w: 6, h: 8, c: colors.brown1 }, { x: offsetX + 28, y: offsetY + 40, w: 6, h: 8, c: colors.brown1 }, { x: offsetX + 14, y: offsetY + 20, w: 6, h: 8, c: colors.brown1 }, { x: offsetX + 28, y: offsetY + 20, w: 6, h: 8, c: colors.brown1 } ]],
+            play: [[ { x: offsetX + 0, y: offsetY + 36, w: 24, h: 8, c: colors.brown2 }, { x: offsetX + 4, y: offsetY + 44, w: 8, h: 8, c: colors.brown1 }, { x: offsetX + 24, y: offsetY + 28, w: 16, h: 8, c: colors.brown2 }, { x: offsetX + 28, y: offsetY + 36, w: 8, h: 8, c: colors.brown1 }, ...baseSprite.filter(p => !p.c.includes('brown')), { x: offsetX + 45, y: offsetY + 44, w: 8, h: 8, c: 'red' }, { x: offsetX + 38, y: offsetY + 22, w: 4, h: 6, c: colors.tan2, transform: `rotate(-35 ${offsetX+40} ${offsetY+28})` } ]]
+        };
+        pixelArt.drink = [[ { x: offsetX + 42, y: offsetY + 42, w: 16, h: 6, c: colors.water }, ...pixelArt.eat[0].filter(p => p.c !== colors.bowl) ]];
+
+        const backgrounds = [
+            { name: "Гостиная", art: [ {x:0, y:0, w:64, h:52, c:'#a1887f'}, {x:0, y:52, w:64, h:12, c:'#6d4c41'}, {x:12, y:54, w:40, h:8, c:'#b71c1c'}, {x:50, y:10, w:10, h:14, c:'#4e342e'}, {x:51, y:11, w:8, h:8, c:'#eceff1'} ] },
+            { name: "Кухня", art: [ {x:0, y:0, w:64, h:52, c:'#b0bec5'}, {x:0, y:52, w:64, h:12, c:'#455a64'}, {x:0, y:52, w:64, h:1, c:'#78909c'}, {x:0, y:40, w:64, h:12, c:'#757575'}, {x:5, y:42, w:4, h:4, c:'#424242'}, {x:50, y:15, w:12, h:25, c:'#fafafa'} ] },
+            { name: "Спальня", art: [ {x:0, y:0, w:64, h:52, c:'#4a148c'}, {x:0, y:52, w:64, h:12, c:'#7b1fa2'}, {x:45, y:8, w:14, h:14, c:'#1a237e'}, {x:48, y:10, w:2, h:2, c:'yellow'}, {x:53, y:15, w:2, h:2, c:'yellow'}, {x:0, y:30, w:18, h:22, c:'#6a1b9a'} ] }
+        ];
+
+        const states = {
+            hungry: { action: 'treat', hint: 'Животик Звяги урчит как мотор!', animation: 'eat'},
+            thirsty: { action: 'water', hint: 'Звяга тяжело дышит и ищет воду.', animation: 'drink'},
+            playful: { action: 'toy', hint: 'Звяга принес свой любимый мячик.', animation: 'play'},
+            needy: { action: 'pet', hint: 'Звяга трется о ногу и тихонько скулит.', animation: 'happy'},
+            bored: { action: 'command', hint: 'Звяга готов к ментальным упражнениям!', animation: 'sit'},
+            trusting: { action: 'belly', hint: 'Звяга плюхнулся на спину! Это знак доверия!', animation: 'belly'}
+        };
+
+        function drawScene(characterSprite) {
+            canvas.innerHTML = '';
+            const bgSprite = backgrounds[currentBgIndex].art;
+            const sprites = [...bgSprite, ...characterSprite];
+
+            sprites.forEach(p => {
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', p.x);
+                rect.setAttribute('y', p.y);
+                rect.setAttribute('width', p.w);
+                rect.setAttribute('height', p.h);
+                rect.setAttribute('fill', p.c);
+                if (p.transform) rect.setAttribute('transform', p.transform);
+                canvas.appendChild(rect);
+            });
+        }
+
+        function playAnimation(animKey, oneShot = true, duration = 800) {
+            const animationFrames = pixelArt[animKey];
+            if (!animationFrames) return;
+            
+            clearInterval(animationInterval);
+            let frame = 0;
+            
+            animationInterval = setInterval(() => {
+                drawScene(animationFrames[frame % animationFrames.length]);
+                frame++;
+            }, 200);
+
+            if (oneShot) {
+                setTimeout(() => {
+                    clearInterval(animationInterval);
+                    if(!isGameOver) drawScene(pixelArt.idle[0]);
+                }, duration);
+            }
+        }
+
+        function updateUI() {
+            trustLevel = Math.max(0, Math.min(100, trustLevel));
+            progressBar.style.width = trustLevel + '%';
+            if (trustLevel <= 0 && !isGameOver) loseGame();
+            if (trustLevel >= 100 && !isGameOver) winGame();
+        }
+
+        function changeState() {
+            const stateKeys = Object.keys(states);
+            let newState = currentState;
+            while (newState === currentState) {
+                newState = stateKeys[Math.floor(Math.random() * stateKeys.length)];
+            }
+            currentState = newState;
+            statusText.textContent = states[currentState].hint;
+            updateUI();
+        }
+
+        function handleAction(action) {
+            if (isGameOver) return;
+            
+            if (gameLoopInterval === null) {
+                if (action === 'treat') {
+                    trustLevel += 20;
+                    statusText.textContent = "Отличное начало! Он тебе доверяет!";
+                    playAnimation('eat', true, 1200);
+                    updateUI();
+                    
+                    setTimeout(() => {
+                        changeState();
+                        gameLoopInterval = setInterval(changeState, 7000);
+                    }, 1500);
+                } else {
+                    statusText.textContent = "Хм, он не реагирует. Может, он голоден?";
+                    playAnimation('idle', false); 
+                }
+                return;
+            }
+
+            const correctAction = states[currentState].action;
+            const animKey = states[currentState].animation;
+            
+            if (action === correctAction) {
+                trustLevel += 20;
+                statusText.textContent = "Звяга счастлив!";
+                playAnimation(animKey || 'happy', true, 1200);
+                
+                clearInterval(gameLoopInterval);
+                setTimeout(() => {
+                    changeState();
+                    gameLoopInterval = setInterval(changeState, 7000);
+                }, 1500); 
+            } else {
+                trustLevel -= 15;
+                statusText.textContent = "Ауч! Звяге это не понравилось!";
+                playAnimation('bite', true, 800);
+            }
+            updateUI();
+        }
+        
+        function winGame() { 
+            isGameOver = true;
+            clearInterval(gameLoopInterval);
+            winScreen.classList.remove('hidden'); 
+        }
+        function loseGame() { 
+            isGameOver = true;
+            clearInterval(gameLoopInterval);
+            loseScreen.classList.remove('hidden'); 
+        }
+
+        function restartGame() {
+            isGameOver = false;
+            trustLevel = 25;
+            currentBgIndex = 0;
+            bgNameDisplay.textContent = backgrounds[currentBgIndex].name;
+            winScreen.classList.add('hidden');
+            loseScreen.classList.add('hidden');
+            
+            clearInterval(gameLoopInterval);
+            gameLoopInterval = null;
+
+            startGame();
+        }
+
+        function startGame() {
+            currentState = 'hungry';
+            statusText.textContent = "Звяга выглядит голодным. Начнем с еды!";
+            drawScene(pixelArt.idle[0]);
+            updateUI();
+        }
+
+        prevBgBtn.addEventListener('click', () => {
+            currentBgIndex = (currentBgIndex - 1 + backgrounds.length) % backgrounds.length;
+            bgNameDisplay.textContent = backgrounds[currentBgIndex].name;
+            drawScene(pixelArt.idle[0]);
+        });
+
+        nextBgBtn.addEventListener('click', () => {
+            currentBgIndex = (currentBgIndex + 1) % backgrounds.length;
+            bgNameDisplay.textContent = backgrounds[currentBgIndex].name;
+            drawScene(pixelArt.idle[0]);
+        });
+
+        actionButtons.forEach(button => {
+            button.addEventListener('click', () => handleAction(button.dataset.action));
+        });
+
+        window.onload = startGame;
+    </script>
+</body>
+</html>
